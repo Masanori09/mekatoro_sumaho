@@ -30,8 +30,6 @@ label{font-size:.82rem;display:flex;gap:6px;align-items:center}
 </head>
 <body>
 <main>
-<div class="row" style="margin:8px 0"><button id="tab_demo" class="on">デモ走行</button><button id="tab_rx">位置情報受信</button></div>
-<div id="demoV">
 <h1>自動除雪機 デモ走行</h1>
 <p class="sub">本体は縦72cm×横72cm(ブレード幅72cm・高さ52cm)で、雪は最大100L(約30kg)まで運べます。除雪範囲を往復走行し、満杯になると雪置き場へ捨てに行きます。総雪量は「除雪範囲の面積×積雪深」で決まります。除雪範囲を通るときは空荷の移動中でも必ず雪を集めるため、経路は通過する雪の量(積載量の増加)を見込んで選びます。機体が敷地の外へ出そうになったら停止せず、空荷なら後退、雪を積んでいる間は後退せずに向きを変えて、別ルートで除雪を続けます。雪を落とすのは満載で未除雪の場所を通るときだけです。</p>
 
@@ -77,22 +75,6 @@ label{font-size:.82rem;display:flex;gap:6px;align-items:center}
 <div>再除雪レーン計画<b id="s_r">0 回</b></div>
 <div>境界手前での後退<b id="s_b">0 回</b></div>
 </div>
-</div>
-</div>
-
-<div id="rxV" hidden>
-<h1>位置情報受信</h1>
-<div class="card">
-<div class="row" style="margin-bottom:8px">
-<input id="rxurl" placeholder="ws://機体のIP:ポート" style="flex:1;min-width:180px;font:inherit;padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--fg)">
-<button class="go" id="rxc">接続</button><button id="rxd">切断</button>
-</div>
-<textarea id="rxt" rows="3" placeholder='手動入力: {"x":1.2,"y":3.4,"th":0.5,"load_l":20} または x,y,th' style="width:100%;box-sizing:border-box;font:inherit;padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--fg)"></textarea>
-<div class="row" style="margin-top:6px"><button id="rxs">反映</button><button id="rxf">デモ走行の位置を流す</button><button id="rxk">軌跡を消す</button></div>
-<div id="rxm" style="font-size:.85rem;margin-top:6px;min-height:1.3em"></div>
-</div>
-<div class="card"><canvas id="rxcv" width="600" height="396"></canvas>
-<div class="stats" style="margin-top:8px"><div>受信数<b id="rx_n">0</b></div><div>位置 (x, y)<b id="rx_p">-</b></div><div>向き<b id="rx_h">-</b></div><div>積載量<b id="rx_l">-</b></div><div>最終受信<b id="rx_a">-</b></div></div></div>
 </div>
 </main>
 <script>
@@ -375,8 +357,7 @@ function tick(ts){
   if(R.done){running=false;$('run').textContent='▶ 走行開始';stats();
    if(!R.err)msg('走行を終了しました。除雪進捗 '+$('s_p').textContent+'(運搬中に落とした雪 '+Math.round(R.spill*1000)+' L、再除雪の計画 '+R.replans+' 回、後退 '+R.fails+' 回)。境界付近は安全のため一部を除雪しない場合があります。')}
   stats()}
- if(RX.feed&&running)rxPush({x:R.x,y:R.y,th:R.th,load:R.load});
- last=ts;draw();rxDraw();requestAnimationFrame(tick)}
+ last=ts;draw();requestAnimationFrame(tick)}
 
 function start(){
  if(R.done)reset();
@@ -456,57 +437,6 @@ $('smp').onclick=sample;
 $('clr').onclick=()=>{T.fill(0);snow.fill(0);BP=[];closed=false;IN.fill(0);B=null;reset()};
 $('spd').oninput=()=>{$('spdv').textContent=$('spd').value+'x'};
 $('depth').oninput=()=>{$('depv').textContent=$('depth').value+' cm';if(R.started)return msgLock();for(let i=0;i<T.length;i++)if(T[i]===1)snow[i]=rnd();B=null;reset()};
-
-// ---- 位置情報受信 ----
-const rxc=$('rxcv').getContext('2d'),RX={p:null,trail:[],n:0,ws:null,feed:false,t:0};
-function rxPush(o){if(!o)return false;const x=+o.x,y=+o.y;if(!isFinite(x)||!isFinite(y))return false;
- const th=isFinite(+o.th)?+o.th:(RX.p?RX.p.th:0);
- const load=o.load_l!=null?o.load_l/1000:(+o.load||0);
- RX.p={x,y,th,load};RX.n++;RX.t=performance.now();
- const l=RX.trail[RX.trail.length-1];
- if(!l||Math.hypot(l.x-x,l.y-y)>0.02){RX.trail.push({x,y});if(RX.trail.length>3000)RX.trail.shift()}
- return true}
-function rxParse(s){s=s.trim();if(!s)return false;
- try{const o=JSON.parse(s);return Array.isArray(o)?o.map(rxPush).some(Boolean):rxPush(o)}catch(e){}
- const a=s.split(/[,\s]+/).map(Number);
- return a.length>=2&&rxPush({x:a[0],y:a[1],th:a[2],load:a[3]})}
-function rxMsg(s){$('rxm').textContent=s}
-function rxDisc(){if(RX.ws){const w=RX.ws;RX.ws=null;w.close()}}
-function rxConn(){rxDisc();const u=$('rxurl').value.trim();if(!u)return rxMsg('接続先URLを入力してください。');
- try{const w=new WebSocket(u);RX.ws=w;rxMsg('接続中…');
-  w.onopen=()=>rxMsg('接続しました');
-  w.onmessage=e=>String(e.data).split('\n').forEach(rxParse);
-  w.onerror=()=>rxMsg('接続に失敗しました(公開ページでは外部への接続が制限される場合があります)');
-  w.onclose=()=>{if(RX.ws===w){RX.ws=null;rxMsg('切断しました')}}
- }catch(e){rxMsg('接続できません: '+e.message)}}
-function rxDraw(){if($('rxV').hidden)return;
- const m=PX/CS,cols=['#cdd4da','#7d8892','#c9a063','#4a545e'];
- for(let r=0;r<H;r++)for(let c=0;c<W;c++){const i=idx(c,r);
-  rxc.fillStyle=cols[T[i]];rxc.fillRect(c*PX,r*PX,PX,PX);
-  if(closed&&!IN[i]){rxc.fillStyle='rgba(20,25,30,.5)';rxc.fillRect(c*PX,r*PX,PX,PX)}}
- if(BP.length){rxc.strokeStyle='#d11a5a';rxc.lineWidth=2.5;rxc.beginPath();
-  BP.forEach((p,k)=>k?rxc.lineTo(p.x*m,p.y*m):rxc.moveTo(p.x*m,p.y*m));if(closed)rxc.closePath();rxc.stroke()}
- if(RX.trail.length>1){rxc.strokeStyle='rgba(30,110,200,.9)';rxc.lineWidth=2;rxc.beginPath();
-  RX.trail.forEach((p,k)=>k?rxc.lineTo(p.x*m,p.y*m):rxc.moveTo(p.x*m,p.y*m));rxc.stroke()}
- const p=RX.p;
- if(p){rxc.save();rxc.translate(p.x*m,p.y*m);rxc.rotate(p.th);
-  rxc.fillStyle='#e8700a';rxc.fillRect(-0.36*m,-0.36*m,0.72*m,0.72*m);
-  rxc.fillStyle='#f2f2f2';rxc.fillRect(0.3*m,-BW/2*m,0.06*m,BW*m);rxc.restore();
-  $('rx_p').textContent=p.x.toFixed(2)+', '+p.y.toFixed(2)+' m';
-  $('rx_h').textContent=Math.round(p.th*180/Math.PI)+'°';
-  $('rx_l').textContent=Math.round(p.load*1000)+' L';
-  $('rx_a').textContent=((performance.now()-RX.t)/1000).toFixed(1)+' 秒前'}
- $('rx_n').textContent=RX.n}
-function tab(k){$('demoV').hidden=k!=='demo';$('rxV').hidden=k!=='rx';
- $('tab_demo').classList.toggle('on',k==='demo');$('tab_rx').classList.toggle('on',k==='rx');
- try{location.hash=k}catch(e){}}
-$('tab_demo').onclick=()=>tab('demo');$('tab_rx').onclick=()=>tab('rx');
-$('rxc').onclick=rxConn;$('rxd').onclick=rxDisc;
-$('rxs').onclick=()=>{const n=$('rxt').value.split('\n').filter(rxParse).length;rxMsg(n+' 件を反映しました')};
-$('rxk').onclick=()=>{RX.trail=[]};
-$('rxf').onclick=()=>{RX.feed=!RX.feed;$('rxf').classList.toggle('on',RX.feed);if(RX.feed&&!running)start()};
-tab(location.hash==='#rx'?'rx':'demo');
-
 sample();requestAnimationFrame(tick);
 })();
 </script>
